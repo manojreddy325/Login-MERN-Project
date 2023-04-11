@@ -1,6 +1,7 @@
 const express = require('express')
 const cors = require('cors')
 const mongoose = require('mongoose')
+const bcrypt = require('bcrypt');
 
 const app = express();
 app.use(express.json());
@@ -31,44 +32,58 @@ const userSchema = new mongoose.Schema({
 
 const User = new mongoose.model("User", userSchema);
 
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { email, password } = req.body;
-  User.findOne({ email: email })
-      .then(user => {
-          if (user) {
-              if (password === user.password) {
-                  res.send({ message: "Login Successful", user: user })
-              } else {
-                  res.send({ message: "Password didn't match" })
-              }
-          } else {
-              res.send({ message: "User not registered" })
-          }
-      });
+  try {
+    const user = await User.findOne({ email: email });
+    if (!user) {
+      res.send({ message: "User not registered" });
+      return;
+    }
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (!passwordMatch) {
+      res.send({ message: "Password didn't match" });
+      return;
+    }
+    res.send({ message: "Login Successful", user: user });
+  } catch (error) {
+    res.send({ message: "An error occurred while logging in." });
+  }
 });
 
-app.post("/signup", (req, res)=> {
-  const { name, email, password} = req.body
+app.post('/signup', (req, res) => {
+  const { name, email, password } = req.body;
   User.findOne({ email: email })
     .then(user => {
       if (user) {
-        res.send({ message: "User already registered" })
+        res.send({ message: 'User already registered' });
       } else {
-        const newUser = new User({
-          name,
-          email,
-          password
-        })
-        return newUser.save()
+        // Hashing the password
+        bcrypt.hash(password, 10, (err, hashedPassword) => {
+          if (err) {
+            res.send({ message: 'Error while hashing password' });
+          } else {
+            const newUser = new User({
+              name,
+              email,
+              password: hashedPassword, // Saving the hashed password
+            });
+            newUser.save()
+              .then(() => {
+                res.send({ message: 'Successfully registered, please login now.' });
+              })
+              .catch((err) => {
+                res.send({ message: 'Error while saving user to database' });
+              });
+          }
+        });
       }
     })
-    .then(() => {
-      res.send({ message: "Successfully registered, please login now." })
-    })
     .catch(err => {
-      res.send(err)
-    })
-}) 
+      res.send({ message: 'Error while checking if user exists in database' });
+    });
+});
+
 
 app.listen(3006,() => {
   console.log("DB started at port 3006")
